@@ -184,24 +184,39 @@ if (isset($_GET['edit']) && ctype_digit($_GET['edit'])) {
     $editData = $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
-$search = trim($_GET['search'] ?? '');
+$search         = trim($_GET['search'] ?? '');
+$filterGender   = trim($_GET['gender'] ?? '');
+$filterEducation = trim($_GET['education_status'] ?? '');
+
+$conditions = [];
+$params     = [];
+
 if ($search !== '') {
-    $stmt = $pdo->prepare("
-        SELECT * FROM orphans
-        WHERE file_number LIKE ?
-           OR name LIKE ?
-           OR mother_name LIKE ?
-           OR guardian_name LIKE ?
-           OR contact_info LIKE ?
-           OR address LIKE ?
-        ORDER BY id DESC
-    ");
-    $keyword = '%' . $search . '%';
-    $stmt->execute([$keyword, $keyword, $keyword, $keyword, $keyword, $keyword]);
-} else {
-    $stmt = $pdo->query("SELECT * FROM orphans ORDER BY id DESC");
+    $keyword     = '%' . $search . '%';
+    $conditions[] = "(file_number LIKE ? OR name LIKE ? OR mother_name LIKE ? OR guardian_name LIKE ? OR contact_info LIKE ? OR address LIKE ?)";
+    array_push($params, $keyword, $keyword, $keyword, $keyword, $keyword, $keyword);
 }
+if ($filterGender !== '') {
+    $conditions[] = "gender = ?";
+    $params[]     = $filterGender;
+}
+if ($filterEducation !== '') {
+    $conditions[] = "education_status = ?";
+    $params[]     = $filterEducation;
+}
+
+$sql = "SELECT * FROM orphans";
+if ($conditions) {
+    $sql .= " WHERE " . implode(' AND ', $conditions);
+}
+$sql .= " ORDER BY id DESC";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Distinct education values for filter dropdown
+$educationValues = $pdo->query("SELECT DISTINCT education_status FROM orphans WHERE education_status IS NOT NULL AND education_status != '' ORDER BY education_status ASC")->fetchAll(PDO::FETCH_COLUMN);
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -259,13 +274,19 @@ body {
         <aside class="col-lg-3 col-xl-2 sidebar">
             <h4 class="fw-bold mb-4"><i class="bi bi-heart-fill text-warning ms-2"></i>إدارة الزكاة</h4>
             <nav class="nav flex-column">
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/index.php">لوحة التحكم</a>
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/poor_families.php">الأسر الفقيرة</a>
-                <a class="nav-link active" href="<?= BASE_PATH ?>/admin/orphans.php">الأيتام</a>
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/sponsorships.php">كفالة الأيتام</a>
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/distributions.php">التوزيعات</a>
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/reports.php">التقارير</a>
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/logout.php">تسجيل الخروج</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/index.php"><i class="bi bi-speedometer2 ms-2"></i>لوحة التحكم</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/poor_families.php"><i class="bi bi-people-fill ms-2"></i>الأسر الفقيرة</a>
+                <a class="nav-link active" href="<?= BASE_PATH ?>/admin/orphans.php"><i class="bi bi-person-hearts ms-2"></i>الأيتام</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/sponsorships.php"><i class="bi bi-cash-coin ms-2"></i>كفالة الأيتام</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/distributions.php"><i class="bi bi-box-seam ms-2"></i>التوزيعات</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/reports.php"><i class="bi bi-bar-chart-line-fill ms-2"></i>التقارير</a>
+                <hr style="border-color:rgba(255,255,255,0.15);margin:.4rem 0;">
+                <small class="text-white-50 px-2 mb-1" style="font-size:.72rem;letter-spacing:.04em;">الطباعة</small>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=poor_families"><i class="bi bi-printer ms-2"></i>كشف الأسر</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=orphans"><i class="bi bi-printer ms-2"></i>كشف الأيتام</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=sponsorships"><i class="bi bi-printer ms-2"></i>كشف الكفالات</a>
+                <hr style="border-color:rgba(255,255,255,0.15);margin:.4rem 0;">
+                <a class="nav-link" style="background:rgba(220,53,69,.18);" href="<?= BASE_PATH ?>/admin/logout.php"><i class="bi bi-box-arrow-right ms-2"></i>تسجيل الخروج</a>
             </nav>
         </aside>
 
@@ -380,12 +401,43 @@ body {
             <div class="card card-box">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-                        <h4 class="fw-bold mb-0">سجلات الأيتام</h4>
-                        <form method="GET" class="d-flex gap-2">
-                            <input type="text" name="search" class="form-control" placeholder="بحث..." value="<?= e($search) ?>">
-                            <button class="btn btn-outline-primary" type="submit">بحث</button>
-                        </form>
+                        <h4 class="fw-bold mb-0">سجلات الأيتام
+                            <?php if ($search !== '' || $filterGender !== '' || $filterEducation !== ''): ?>
+                                <span class="badge bg-info text-dark fs-6 ms-2"><?= count($rows) ?> نتيجة</span>
+                            <?php endif; ?>
+                        </h4>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <a href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=orphans" class="btn btn-outline-secondary btn-sm" target="_blank">
+                                <i class="bi bi-printer ms-1"></i>طباعة كشف الأيتام
+                            </a>
+                        </div>
                     </div>
+
+                    <!-- Smart Search -->
+                    <form method="GET" class="row g-2 mb-3">
+                        <div class="col-sm-5">
+                            <input type="text" name="search" class="form-control form-control-sm" placeholder="بحث بالاسم أو الملف أو الوصي..." value="<?= e($search) ?>">
+                        </div>
+                        <div class="col-sm-3">
+                            <select name="gender" class="form-select form-select-sm">
+                                <option value="">الجنس - الكل</option>
+                                <option value="ذكر"  <?= $filterGender === 'ذكر'  ? 'selected' : '' ?>>ذكر</option>
+                                <option value="أنثى" <?= $filterGender === 'أنثى' ? 'selected' : '' ?>>أنثى</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-3">
+                            <select name="education_status" class="form-select form-select-sm">
+                                <option value="">التعليم - الكل</option>
+                                <?php foreach ($educationValues as $edu): ?>
+                                    <option value="<?= e($edu) ?>" <?= $filterEducation === $edu ? 'selected' : '' ?>><?= e($edu) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-sm-1 d-flex gap-1">
+                            <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-search"></i></button>
+                            <a href="<?= BASE_PATH ?>/admin/orphans.php" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-lg"></i></a>
+                        </div>
+                    </form>
 
                     <div class="table-responsive">
                         <table class="table table-bordered align-middle text-center">
@@ -439,5 +491,6 @@ body {
         </main>
     </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

@@ -94,22 +94,45 @@ if (isset($_GET['edit']) && ctype_digit($_GET['edit'])) {
     $editData = $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
-$search = trim($_GET['search'] ?? '');
+$search           = trim($_GET['search'] ?? '');
+$filterStatus     = trim($_GET['delivery_status'] ?? '');
+$filterType       = trim($_GET['assistance_type'] ?? '');
+$filterDateFrom   = trim($_GET['date_from'] ?? '');
+$filterDateTo     = trim($_GET['date_to'] ?? '');
+
+$conditions = [];
+$params     = [];
+
 if ($search !== '') {
-    $stmt = $pdo->prepare("
-        SELECT * FROM distributions
-        WHERE assistance_type LIKE ?
-           OR beneficiary_name LIKE ?
-           OR category_name LIKE ?
-           OR delivery_status LIKE ?
-           OR responsible_person LIKE ?
-        ORDER BY id DESC
-    ");
-    $keyword = '%' . $search . '%';
-    $stmt->execute([$keyword, $keyword, $keyword, $keyword, $keyword]);
-} else {
-    $stmt = $pdo->query("SELECT * FROM distributions ORDER BY id DESC");
+    $keyword     = '%' . $search . '%';
+    $conditions[] = "(beneficiary_name LIKE ? OR responsible_person LIKE ? OR category_name LIKE ?)";
+    array_push($params, $keyword, $keyword, $keyword);
 }
+if ($filterType !== '') {
+    $conditions[] = "assistance_type = ?";
+    $params[]     = $filterType;
+}
+if ($filterStatus !== '') {
+    $conditions[] = "delivery_status = ?";
+    $params[]     = $filterStatus;
+}
+if ($filterDateFrom !== '') {
+    $conditions[] = "distribution_date >= ?";
+    $params[]     = $filterDateFrom;
+}
+if ($filterDateTo !== '') {
+    $conditions[] = "distribution_date <= ?";
+    $params[]     = $filterDateTo;
+}
+
+$sql = "SELECT * FROM distributions";
+if ($conditions) {
+    $sql .= " WHERE " . implode(' AND ', $conditions);
+}
+$sql .= " ORDER BY id DESC";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
@@ -155,6 +178,13 @@ body {
 .table thead th {
     background: #eef4ff;
 }
+@media print {
+    .sidebar, .no-print { display: none !important; }
+    .col-lg-9, .col-xl-10 { width: 100% !important; max-width: 100% !important; flex: 0 0 100% !important; }
+    .content { padding: .5rem !important; }
+    body { background: #fff !important; }
+    .card-box { box-shadow: none !important; border: 1px solid #ccc !important; }
+}
 </style>
 </head>
 <body>
@@ -163,13 +193,19 @@ body {
         <aside class="col-lg-3 col-xl-2 sidebar">
             <h4 class="fw-bold mb-4"><i class="bi bi-heart-fill text-warning ms-2"></i>إدارة الزكاة</h4>
             <nav class="nav flex-column">
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/index.php">لوحة التحكم</a>
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/poor_families.php">الأسر الفقيرة</a>
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/orphans.php">الأيتام</a>
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/sponsorships.php">كفالة الأيتام</a>
-                <a class="nav-link active" href="<?= BASE_PATH ?>/admin/distributions.php">التوزيعات</a>
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/reports.php">التقارير</a>
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/logout.php">تسجيل الخروج</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/index.php"><i class="bi bi-speedometer2 ms-2"></i>لوحة التحكم</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/poor_families.php"><i class="bi bi-people-fill ms-2"></i>الأسر الفقيرة</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/orphans.php"><i class="bi bi-person-hearts ms-2"></i>الأيتام</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/sponsorships.php"><i class="bi bi-cash-coin ms-2"></i>كفالة الأيتام</a>
+                <a class="nav-link active" href="<?= BASE_PATH ?>/admin/distributions.php"><i class="bi bi-box-seam ms-2"></i>التوزيعات</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/reports.php"><i class="bi bi-bar-chart-line-fill ms-2"></i>التقارير</a>
+                <hr style="border-color:rgba(255,255,255,0.15);margin:.4rem 0;">
+                <small class="text-white-50 px-2 mb-1" style="font-size:.72rem;letter-spacing:.04em;">الطباعة</small>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=poor_families"><i class="bi bi-printer ms-2"></i>كشف الأسر</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=orphans"><i class="bi bi-printer ms-2"></i>كشف الأيتام</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=sponsorships"><i class="bi bi-printer ms-2"></i>كشف الكفالات</a>
+                <hr style="border-color:rgba(255,255,255,0.15);margin:.4rem 0;">
+                <a class="nav-link" style="background:rgba(220,53,69,.18);" href="<?= BASE_PATH ?>/admin/logout.php"><i class="bi bi-box-arrow-right ms-2"></i>تسجيل الخروج</a>
             </nav>
         </aside>
 
@@ -188,7 +224,7 @@ body {
                 <div class="alert alert-danger"><?= e($error) ?></div>
             <?php endif; ?>
 
-            <div class="card card-box mb-4">
+            <div class="card card-box mb-4 no-print">
                 <div class="card-body">
                     <h4 class="fw-bold mb-3"><?= $editData ? 'تعديل سجل التوزيع' : 'إضافة توزيع جديد' ?></h4>
                     <form method="POST">
@@ -199,7 +235,12 @@ body {
                         <div class="row g-3">
                             <div class="col-md-4">
                                 <label class="form-label">نوع المساعدة</label>
-                                <input type="text" name="assistance_type" class="form-control" value="<?= e($editData['assistance_type'] ?? '') ?>" required>
+                                <select name="assistance_type" class="form-select" required>
+                                    <option value="">اختر النوع</option>
+                                    <?php foreach (['سلة غذائية','مساعدة مالية','ملابس','أدوية','مستلزمات مدرسية','أخرى'] as $opt): ?>
+                                        <option value="<?= e($opt) ?>" <?= (($editData['assistance_type'] ?? '') === $opt) ? 'selected' : '' ?>><?= e($opt) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">اسم المستفيد</label>
@@ -252,12 +293,48 @@ body {
             <div class="card card-box">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-                        <h4 class="fw-bold mb-0">سجلات التوزيعات</h4>
-                        <form method="GET" class="d-flex gap-2">
-                            <input type="text" name="search" class="form-control" placeholder="بحث..." value="<?= e($search) ?>">
-                            <button class="btn btn-outline-primary" type="submit">بحث</button>
-                        </form>
+                        <h4 class="fw-bold mb-0">سجلات التوزيعات
+                            <?php if ($search !== '' || $filterStatus !== '' || $filterType !== '' || $filterDateFrom !== '' || $filterDateTo !== ''): ?>
+                                <span class="badge bg-info text-dark fs-6 ms-2"><?= count($rows) ?> نتيجة</span>
+                            <?php endif; ?>
+                        </h4>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+                            <i class="bi bi-printer ms-1"></i>طباعة القائمة
+                        </button>
                     </div>
+
+                    <!-- Smart Search -->
+                    <form method="GET" class="row g-2 mb-3 no-print">
+                        <div class="col-sm-3">
+                            <input type="text" name="search" class="form-control form-control-sm" placeholder="بحث بالاسم أو الفئة..." value="<?= e($search) ?>">
+                        </div>
+                        <div class="col-sm-2">
+                            <select name="assistance_type" class="form-select form-select-sm">
+                                <option value="">نوع المساعدة - الكل</option>
+                                <?php foreach (['سلة غذائية','مساعدة مالية','ملابس','أدوية','مستلزمات مدرسية','أخرى'] as $opt): ?>
+                                    <option value="<?= e($opt) ?>" <?= $filterType === $opt ? 'selected' : '' ?>><?= e($opt) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-sm-2">
+                            <select name="delivery_status" class="form-select form-select-sm">
+                                <option value="">حالة التسليم - الكل</option>
+                                <option value="تم التسليم"  <?= $filterStatus === 'تم التسليم'  ? 'selected' : '' ?>>تم التسليم</option>
+                                <option value="معلق"        <?= $filterStatus === 'معلق'        ? 'selected' : '' ?>>معلق</option>
+                                <option value="ملغي"        <?= $filterStatus === 'ملغي'        ? 'selected' : '' ?>>ملغي</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-2">
+                            <input type="date" name="date_from" class="form-control form-control-sm" title="من تاريخ" value="<?= e($filterDateFrom) ?>">
+                        </div>
+                        <div class="col-sm-2">
+                            <input type="date" name="date_to" class="form-control form-control-sm" title="إلى تاريخ" value="<?= e($filterDateTo) ?>">
+                        </div>
+                        <div class="col-sm-1 d-flex gap-1">
+                            <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-search"></i></button>
+                            <a href="<?= BASE_PATH ?>/admin/distributions.php" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-lg"></i></a>
+                        </div>
+                    </form>
 
                     <div class="table-responsive">
                         <table class="table table-bordered align-middle text-center">
@@ -310,5 +387,6 @@ body {
         </main>
     </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

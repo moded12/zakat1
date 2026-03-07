@@ -18,11 +18,19 @@ function getCount(PDO $pdo, string $table, string $where = ''): int
     return (int) $pdo->query($sql)->fetchColumn();
 }
 
-$totalFamilies = getCount($pdo, 'poor_families');
-$totalOrphans = getCount($pdo, 'orphans');
-$totalSponsorships = getCount($pdo, 'sponsorships');
-$activeSponsorships = getCount($pdo, 'sponsorships', "status = 'نشطة'");
-$totalDistributions = getCount($pdo, 'distributions');
+$totalFamilies        = getCount($pdo, 'poor_families');
+$totalOrphans         = getCount($pdo, 'orphans');
+$totalSponsorships    = getCount($pdo, 'sponsorships');
+$activeSponsorships   = getCount($pdo, 'sponsorships', "status = 'نشطة'");
+$totalDistributions   = getCount($pdo, 'distributions');
+$pendingDistributions = getCount($pdo, 'distributions', "delivery_status = 'معلق'");
+
+// Recent saved sheets count (last 30 days)
+$recentSheets = 0;
+try {
+    $recentSheets = (int)$pdo->query("SELECT COUNT(*) FROM distribution_sheets WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)")->fetchColumn();
+} catch (PDOException $ignored) {}
+
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -181,6 +189,18 @@ $totalDistributions = getCount($pdo, 'distributions');
                 <a class="nav-link" href="<?= BASE_PATH ?>/admin/reports.php">
                     <i class="bi bi-bar-chart-line-fill ms-2"></i> التقارير
                 </a>
+                <hr style="border-color:rgba(255,255,255,0.15);margin:.4rem 0;">
+                <small class="text-white-50 px-2 mb-1" style="font-size:.72rem;letter-spacing:.04em;">الطباعة</small>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=poor_families">
+                    <i class="bi bi-printer ms-2"></i> كشف الأسر
+                </a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=orphans">
+                    <i class="bi bi-printer ms-2"></i> كشف الأيتام
+                </a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=sponsorships">
+                    <i class="bi bi-printer ms-2"></i> كشف الكفالات
+                </a>
+                <hr style="border-color:rgba(255,255,255,0.15);margin:.4rem 0;">
                 <a class="nav-link logout" href="<?= BASE_PATH ?>/admin/logout.php">
                     <i class="bi bi-box-arrow-right ms-2"></i> تسجيل الخروج
                 </a>
@@ -200,6 +220,7 @@ $totalDistributions = getCount($pdo, 'distributions');
 
             <div class="row g-4 mb-4">
                 <div class="col-md-6 col-xl-3">
+                    <a href="<?= BASE_PATH ?>/admin/poor_families.php" class="text-decoration-none">
                     <div class="card stat-card">
                         <div class="card-body">
                             <div class="stat-icon icon-families">
@@ -209,9 +230,11 @@ $totalDistributions = getCount($pdo, 'distributions');
                             <div class="stat-number"><?= $totalFamilies ?></div>
                         </div>
                     </div>
+                    </a>
                 </div>
 
                 <div class="col-md-6 col-xl-3">
+                    <a href="<?= BASE_PATH ?>/admin/orphans.php" class="text-decoration-none">
                     <div class="card stat-card">
                         <div class="card-body">
                             <div class="stat-icon icon-orphans">
@@ -221,9 +244,11 @@ $totalDistributions = getCount($pdo, 'distributions');
                             <div class="stat-number"><?= $totalOrphans ?></div>
                         </div>
                     </div>
+                    </a>
                 </div>
 
                 <div class="col-md-6 col-xl-3">
+                    <a href="<?= BASE_PATH ?>/admin/sponsorships.php" class="text-decoration-none">
                     <div class="card stat-card">
                         <div class="card-body">
                             <div class="stat-icon icon-sponsorships">
@@ -234,9 +259,11 @@ $totalDistributions = getCount($pdo, 'distributions');
                             <small class="text-success">النشطة: <?= $activeSponsorships ?></small>
                         </div>
                     </div>
+                    </a>
                 </div>
 
                 <div class="col-md-6 col-xl-3">
+                    <a href="<?= BASE_PATH ?>/admin/distributions.php?delivery_status=<?= urlencode('معلق') ?>" class="text-decoration-none">
                     <div class="card stat-card">
                         <div class="card-body">
                             <div class="stat-icon icon-distributions">
@@ -244,8 +271,12 @@ $totalDistributions = getCount($pdo, 'distributions');
                             </div>
                             <h6 class="text-muted mb-2">التوزيعات</h6>
                             <div class="stat-number"><?= $totalDistributions ?></div>
+                            <?php if ($pendingDistributions > 0): ?>
+                                <small class="text-warning fw-bold"><i class="bi bi-exclamation-circle me-1"></i>معلق: <?= $pendingDistributions ?></small>
+                            <?php endif; ?>
                         </div>
                     </div>
+                    </a>
                 </div>
             </div>
 
@@ -286,7 +317,7 @@ $totalDistributions = getCount($pdo, 'distributions');
                     </div>
                 </div>
 
-                <div class="col-md-6 col-xl-6">
+                <div class="col-md-6 col-xl-4">
                     <div class="card quick-card h-100">
                         <div class="card-body">
                             <h5 class="fw-bold mb-3">إدارة التوزيعات</h5>
@@ -294,11 +325,16 @@ $totalDistributions = getCount($pdo, 'distributions');
                             <a href="<?= BASE_PATH ?>/admin/distributions.php" class="btn btn-info text-white">
                                 الانتقال للقسم
                             </a>
+                            <?php if ($pendingDistributions > 0): ?>
+                                <a href="<?= BASE_PATH ?>/admin/distributions.php?delivery_status=<?= urlencode('معلق') ?>" class="btn btn-outline-warning btn-sm ms-1">
+                                    <i class="bi bi-exclamation-circle"></i> <?= $pendingDistributions ?> معلق
+                                </a>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
 
-                <div class="col-md-6 col-xl-6">
+                <div class="col-md-6 col-xl-4">
                     <div class="card quick-card h-100">
                         <div class="card-body">
                             <h5 class="fw-bold mb-3">التقارير والإحصائيات</h5>
@@ -306,6 +342,31 @@ $totalDistributions = getCount($pdo, 'distributions');
                             <a href="<?= BASE_PATH ?>/admin/reports.php" class="btn btn-dark">
                                 عرض التقارير
                             </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-6 col-xl-4">
+                    <div class="card quick-card h-100">
+                        <div class="card-body">
+                            <h5 class="fw-bold mb-3"><i class="bi bi-printer text-primary ms-2"></i>كشوفات الطباعة</h5>
+                            <p class="text-muted mb-3">
+                                طباعة كشوفات التوزيع للأسر أو الأيتام أو الكفالات مع إمكانية الاختيار والحفظ.
+                                <?php if ($recentSheets > 0): ?>
+                                    <br><small class="text-success"><?= $recentSheets ?> كشف محفوظ خلال 30 يوماً</small>
+                                <?php endif; ?>
+                            </p>
+                            <div class="d-flex flex-wrap gap-2">
+                                <a href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=poor_families" class="btn btn-outline-primary btn-sm">
+                                    <i class="bi bi-printer ms-1"></i>الأسر
+                                </a>
+                                <a href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=orphans" class="btn btn-outline-success btn-sm">
+                                    <i class="bi bi-printer ms-1"></i>الأيتام
+                                </a>
+                                <a href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=sponsorships" class="btn btn-outline-warning btn-sm">
+                                    <i class="bi bi-printer ms-1"></i>الكفالات
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>
