@@ -28,7 +28,7 @@ function handleFileUpload(array $file, string $entityType, int $entityId, PDO $p
     if (!is_dir(UPLOAD_DIR)) mkdir(UPLOAD_DIR, 0755, true);
     if (!move_uploaded_file($file['tmp_name'], $dest)) return false;
     $stmt = $pdo->prepare('INSERT INTO attachments (entity_type, entity_id, file_name, file_path) VALUES (?,?,?,?)');
-    $stmt->execute([$entityType, $entityId, htmlspecialchars($file['name'], ENT_QUOTES, 'UTF-8'), $newName]);
+    $stmt->execute([$entityType, $entityId, htmlspecialchars(basename($file['name']), ENT_QUOTES, 'UTF-8'), $newName]);
     return true;
 }
 
