@@ -4,33 +4,10 @@ require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/helpers.php';
 checkAuth();
 
 $pdo = getDB();
-
-// ─── File upload helper ───────────────────────────────────────────────────────
-function handleFileUpload(array $file, string $entityType, int $entityId, PDO $pdo): bool {
-    if ($file['error'] !== UPLOAD_ERR_OK) return false;
-    if ($file['size'] > MAX_FILE_SIZE) return false;
-    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    if (!in_array($ext, ALLOWED_EXTENSIONS, true)) return false;
-    $finfo = new finfo(FILEINFO_MIME_TYPE);
-    $mime  = $finfo->file($file['tmp_name']);
-    $allowedMimes = [
-        'image/jpeg', 'image/png',
-        'application/pdf',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ];
-    if (!in_array($mime, $allowedMimes, true)) return false;
-    $newName = bin2hex(random_bytes(16)) . '.' . $ext;
-    $dest    = UPLOAD_DIR . $newName;
-    if (!is_dir(UPLOAD_DIR)) mkdir(UPLOAD_DIR, 0755, true);
-    if (!move_uploaded_file($file['tmp_name'], $dest)) return false;
-    $stmt = $pdo->prepare('INSERT INTO attachments (entity_type, entity_id, file_name, file_path) VALUES (?,?,?,?)');
-    $stmt->execute([$entityType, $entityId, htmlspecialchars(basename($file['name']), ENT_QUOTES, 'UTF-8'), $newName]);
-    return true;
-}
 
 // ─── Handle POST ──────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -82,10 +59,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
             $stmt->execute([$fileNumber,$name,$birthDateVal,$gender,$motherName,$guardianName,$contact,$address,$education,$health,$notes]);
             $newId = (int)$pdo->lastInsertId();
-            if (!empty($_FILES['attachment']['name'])) {
-                handleFileUpload($_FILES['attachment'], 'orphan', $newId, $pdo);
+            $uploadErr = '';
+            if (!empty($_FILES['attachment']['name']) && handleFileUpload($_FILES['attachment'], 'orphan', $newId, $pdo, $uploadErr) === false && $uploadErr !== '') {
+                $_SESSION['flash'] = ['type' => 'success', 'message' => 'تم إضافة اليتيم بنجاح. تنبيه: ' . $uploadErr];
+            } else {
+                $_SESSION['flash'] = ['type' => 'success', 'message' => 'تم إضافة اليتيم بنجاح'];
             }
-            $_SESSION['flash'] = ['type' => 'success', 'message' => 'تم إضافة اليتيم بنجاح'];
         } else {
             $id = (int)($_POST['id'] ?? 0);
             $stmt = $pdo->prepare(
@@ -95,10 +74,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  WHERE id=?'
             );
             $stmt->execute([$fileNumber,$name,$birthDateVal,$gender,$motherName,$guardianName,$contact,$address,$education,$health,$notes,$id]);
-            if (!empty($_FILES['attachment']['name'])) {
-                handleFileUpload($_FILES['attachment'], 'orphan', $id, $pdo);
+            $uploadErr = '';
+            if (!empty($_FILES['attachment']['name']) && handleFileUpload($_FILES['attachment'], 'orphan', $id, $pdo, $uploadErr) === false && $uploadErr !== '') {
+                $_SESSION['flash'] = ['type' => 'success', 'message' => 'تم تحديث بيانات اليتيم بنجاح. تنبيه: ' . $uploadErr];
+            } else {
+                $_SESSION['flash'] = ['type' => 'success', 'message' => 'تم تحديث بيانات اليتيم بنجاح'];
             }
-            $_SESSION['flash'] = ['type' => 'success', 'message' => 'تم تحديث بيانات اليتيم بنجاح'];
         }
 
     } elseif ($action === 'delete') {
