@@ -97,22 +97,35 @@ if (isset($_GET['edit']) && ctype_digit($_GET['edit'])) {
     $editData = $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
-$search = trim($_GET['search'] ?? '');
+$search         = trim($_GET['search'] ?? '');
+$filterStatus   = trim($_GET['status'] ?? '');
+$filterPayment  = trim($_GET['payment_method'] ?? '');
+
+$conditions = [];
+$params     = [];
+
 if ($search !== '') {
-    $stmt = $pdo->prepare("
-        SELECT * FROM sponsorships
-        WHERE sponsorship_number LIKE ?
-           OR orphan_name LIKE ?
-           OR sponsor_name LIKE ?
-           OR status LIKE ?
-           OR payment_method LIKE ?
-        ORDER BY id DESC
-    ");
-    $keyword = '%' . $search . '%';
-    $stmt->execute([$keyword, $keyword, $keyword, $keyword, $keyword]);
-} else {
-    $stmt = $pdo->query("SELECT * FROM sponsorships ORDER BY id DESC");
+    $keyword     = '%' . $search . '%';
+    $conditions[] = "(sponsorship_number LIKE ? OR orphan_name LIKE ? OR sponsor_name LIKE ?)";
+    array_push($params, $keyword, $keyword, $keyword);
 }
+if ($filterStatus !== '') {
+    $conditions[] = "status = ?";
+    $params[]     = $filterStatus;
+}
+if ($filterPayment !== '') {
+    $conditions[] = "payment_method = ?";
+    $params[]     = $filterPayment;
+}
+
+$sql = "SELECT * FROM sponsorships";
+if ($conditions) {
+    $sql .= " WHERE " . implode(' AND ', $conditions);
+}
+$sql .= " ORDER BY id DESC";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
@@ -166,13 +179,19 @@ body {
         <aside class="col-lg-3 col-xl-2 sidebar">
             <h4 class="fw-bold mb-4"><i class="bi bi-heart-fill text-warning ms-2"></i>إدارة الزكاة</h4>
             <nav class="nav flex-column">
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/index.php">لوحة التحكم</a>
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/poor_families.php">الأسر الفقيرة</a>
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/orphans.php">الأيتام</a>
-                <a class="nav-link active" href="<?= BASE_PATH ?>/admin/sponsorships.php">كفالة الأيتام</a>
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/distributions.php">التوزيعات</a>
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/reports.php">التقارير</a>
-                <a class="nav-link" href="<?= BASE_PATH ?>/admin/logout.php">تسجيل الخروج</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/index.php"><i class="bi bi-speedometer2 ms-2"></i>لوحة التحكم</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/poor_families.php"><i class="bi bi-people-fill ms-2"></i>الأسر الفقيرة</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/orphans.php"><i class="bi bi-person-hearts ms-2"></i>الأيتام</a>
+                <a class="nav-link active" href="<?= BASE_PATH ?>/admin/sponsorships.php"><i class="bi bi-cash-coin ms-2"></i>كفالة الأيتام</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/distributions.php"><i class="bi bi-box-seam ms-2"></i>التوزيعات</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/reports.php"><i class="bi bi-bar-chart-line-fill ms-2"></i>التقارير</a>
+                <hr style="border-color:rgba(255,255,255,0.15);margin:.4rem 0;">
+                <small class="text-white-50 px-2 mb-1" style="font-size:.72rem;letter-spacing:.04em;">الطباعة</small>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=poor_families"><i class="bi bi-printer ms-2"></i>كشف الأسر</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=orphans"><i class="bi bi-printer ms-2"></i>كشف الأيتام</a>
+                <a class="nav-link" href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=sponsorships"><i class="bi bi-printer ms-2"></i>كشف الكفالات</a>
+                <hr style="border-color:rgba(255,255,255,0.15);margin:.4rem 0;">
+                <a class="nav-link" style="background:rgba(220,53,69,.18);" href="<?= BASE_PATH ?>/admin/logout.php"><i class="bi bi-box-arrow-right ms-2"></i>تسجيل الخروج</a>
             </nav>
         </aside>
 
@@ -222,7 +241,7 @@ body {
                                 <input type="date" name="start_date" class="form-control" value="<?= e($editData['start_date'] ?? '') ?>">
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label">نها  ة الكفالة</label>
+                            <label class="form-label">نهاية الكفالة</label>
                                 <input type="date" name="end_date" class="form-control" value="<?= e($editData['end_date'] ?? '') ?>">
                             </div>
                             <div class="col-md-3">
@@ -259,12 +278,44 @@ body {
             <div class="card card-box">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-                        <h4 class="fw-bold mb-0">سجلات الك  الات</h4>
-                        <form method="GET" class="d-flex gap-2">
-                            <input type="text" name="search" class="form-control" placeholder="بحث..." value="<?= e($search) ?>">
-                            <button class="btn btn-outline-primary" type="submit">بحث</button>
-                        </form>
+                        <h4 class="fw-bold mb-0">سجلات الكفالات
+                            <?php if ($search !== '' || $filterStatus !== '' || $filterPayment !== ''): ?>
+                                <span class="badge bg-info text-dark fs-6 ms-2"><?= count($rows) ?> نتيجة</span>
+                            <?php endif; ?>
+                        </h4>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <a href="<?= BASE_PATH ?>/admin/print_distribution_sheet.php?source=sponsorships" class="btn btn-outline-secondary btn-sm" target="_blank">
+                                <i class="bi bi-printer ms-1"></i>طباعة كشف الكفالات
+                            </a>
+                        </div>
                     </div>
+
+                    <!-- Smart Search -->
+                    <form method="GET" class="row g-2 mb-3">
+                        <div class="col-sm-4">
+                            <input type="text" name="search" class="form-control form-control-sm" placeholder="بحث بالرقم أو الاسم..." value="<?= e($search) ?>">
+                        </div>
+                        <div class="col-sm-3">
+                            <select name="status" class="form-select form-select-sm">
+                                <option value="">الحالة - الكل</option>
+                                <option value="نشطة"   <?= $filterStatus === 'نشطة'   ? 'selected' : '' ?>>نشطة</option>
+                                <option value="منتهية" <?= $filterStatus === 'منتهية' ? 'selected' : '' ?>>منتهية</option>
+                                <option value="معلقة"  <?= $filterStatus === 'معلقة'  ? 'selected' : '' ?>>معلقة</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-3">
+                            <select name="payment_method" class="form-select form-select-sm">
+                                <option value="">طريقة الدفع - الكل</option>
+                                <option value="نقدي"        <?= $filterPayment === 'نقدي'        ? 'selected' : '' ?>>نقدي</option>
+                                <option value="تحويل بنكي"  <?= $filterPayment === 'تحويل بنكي'  ? 'selected' : '' ?>>تحويل بنكي</option>
+                                <option value="شيك"         <?= $filterPayment === 'شيك'         ? 'selected' : '' ?>>شيك</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-2 d-flex gap-1">
+                            <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-search"></i></button>
+                            <a href="<?= BASE_PATH ?>/admin/sponsorships.php" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-lg"></i></a>
+                        </div>
+                    </form>
 
                     <div class="table-responsive">
                         <table class="table table-bordered align-middle text-center">
@@ -319,5 +370,6 @@ body {
         </main>
     </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
